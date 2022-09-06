@@ -12,7 +12,7 @@ namespace HallOfGodsAI
     internal class HallOfGodsAI : Mod
     {
         internal static HallOfGodsAI Instance { get; private set; }
-        internal Envs.HornetEnv _env = new();
+        internal Envs.HornetEnv _env = Envs.HornetEnv.Instance();
 
         public HallOfGodsAI() : base("HallOfGodsAI") { }
 
@@ -31,31 +31,35 @@ namespace HallOfGodsAI
 
             _env.OnStepDone += (step) =>
             {
-                Log($"Step: {step.observation}");
-                Log($"Step: {step.reward}");
-                Log($"Step: {step.done}");
+                Log("Steppped");
             };
             
             ModHooks.HeroUpdateHook += () => {
                 if (Input.GetKeyDown(KeyCode.F2))
                 {
-                    _env.StartFreezeFrame();
+                    // _env.StartFreezeFrame();
                 }
                 if (Input.GetKeyDown(KeyCode.F3))
                 {
-                    _env.EndFreezeFrame();
+                    // _env.EndFreezeFrame();
                 }
                 if (Input.GetKeyDown(KeyCode.F4))
                 {
                     _env.Setup();
                 }
+                if (Input.GetKeyDown(KeyCode.F1))
+                {
+                    // _env.UnloadManagers();
+                }
                 if (Input.GetKeyDown(KeyCode.F5))
                 {
-                    _env.UnloadManagers();
+                    _env.Reset();
                 }
                 if (Input.GetKeyDown(KeyCode.F6))
                 {
                     _env.Debug();
+                    // ModHooks.HeroUpdateHook -= _env.TestBlockingUpdate;
+                    // ModHooks.HeroUpdateHook += _env.TestBlockingUpdate;
                 }
             };
             // SceneManager.

@@ -1,8 +1,8 @@
 using NetMQ;
 using NetMQ.Sockets;
 using AsyncIO;
-using WebSocketSharp;
 using System;
+using System.Threading;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -12,88 +12,24 @@ using InControl;
 
 namespace HallOfGodsAI.Envs
 {
-	public enum ActionSpace
+	
+	public class BlockingHornetEnv : IDisposable
 	{
-		MoveLeft,
-		MoveRight,
-		AttackLeft,
-		AttackRight,
-		AttackUp,
-		AttackDown,
-		Jump,
-		CancelJump,
-		DashLeft,
-		DashRight,
-		CastLeft,
-		CastRight,
-		CastUp,
-		CastDown,
-		None
-		// TODO: Implement these eventually
-		// Heal,
-		// CancelHeal,
-		// ChargeNailArt,
-		// NailArtLeft,
-		// NailArtRight,
-		// NailArtUp,
-		// NailArtDashLeft,
-		// NailArtDashRight
-	}
-	public class HornetEnv : Env<ActionSpace, byte[]>
-	{
-		public static HornetEnv _instance = null;
-
-		public static HornetEnv Instance()
-		{
-
-			if (_instance == null)
-			{
-				_instance = new HornetEnv();
-
-			}
-			return _instance;
-		}
-
-		// internal Networking.NetMQServerManager serverManager = new();
-		internal WebSocket ws;
-		internal string scene_name = "GG_Hornet_1";
+		internal Networking.NetMQServerManager serverManager = new();
+		internal string scene_name = "GG_Hornet_2";
 		internal string gate_name = "door_dreamEnter";
 		internal Utils.GameObservation curObs;
 		internal bool curDone = false;
+		internal int lastFrameCount = 0;
 		internal Utils.InputDeviceShim inputDevice = new();
 		internal float curReward = 0f;
-
+		
 		internal Utils.HitboxReaderManager obsManager = new();
 
 		private static float TimeScaleDuringFrameAdvance = 0f;
 
-		internal GameObject playerDeathPrefab;
 
-		private class PlayerDeathMono : MonoBehaviour
-		{
-			private void Start()
-			{
-				PlayerDeathHook();
-			}
-			private void PlayerDeathHook()
-			{
-				// if (eventAlreadyReceived) return;
-				HallOfGodsAI.Instance.Log("Player died");
-				HornetEnv.Instance().curReward -= 100;
-				HornetEnv.Instance().curDone = true;
-				var step = new Step<byte[]>()
-				{
-					observation = HornetEnv.Instance().curObs.Flatten(),
-					done = HornetEnv.Instance().curDone,
-					reward = HornetEnv.Instance().curReward,
-					info = ""
-				};
-				HornetEnv.Instance().InvokeStepDone(step);
-			}
-		}
-
-		public HornetEnv() :
-			base(new Vector3(212, 120, 1), "Hornet")
+		public BlockingHornetEnv()
 		{
 			InputManager.AttachDevice(inputDevice);
 		}
@@ -101,49 +37,23 @@ namespace HallOfGodsAI.Envs
 		private void ResetDoneHandler(byte[] obs)
 		{
 			HallOfGodsAI.Instance.Log("Reset Done Handler");
-			Send(Networking.MessageType.Reset, obs);
+			serverManager.SendMessage(Networking.MessageType.Reset, obs);
 		}
 
 		public void Setup()
 		{
-			playerDeathPrefab = HeroController.instance.heroDeathPrefab;
-			playerDeathPrefab.AddComponent<PlayerDeathMono>();
-			// playerDeathPrefab.gameObject.Awa
 			// serverManager.Load();
-			ws = new WebSocket("ws://locahost:4096");
-			// server.Bind("tcp://*:5555");
-			// ModHooks.HeroUpdateHook += UpdateLoop;
-			ws.OnMessage += (sender, e) =>
-			{
-				if (e.IsBinary)
-					OnMessageRecieved((Networking.MessageType)e.RawData[0],
-					e.RawData[1]);
-			};
-			ModHooks.AfterTakeDamageHook += TakeDamageHook;
-			ModHooks.OnReceiveDeathEventHook += EnemyDeathHook;
-			On.HealthManager.TakeDamage += DealDamageHook;
-			// On.HealthManager.Die += PlayerDeathHook;
-			OnResetDone += ResetDoneHandler;
-			OnStepDone += StepDoneHandler;
-
-			// PlayMakerFSM fsm = GameObject.Find("Knight").transform.Find("Hero Death").gameObject;
+			// ModHooks.HeroUpdateHook += serverManager.UpdateLoop;
+			// serverManager.OnMessageRecieved += OnMessageRecieved;
+			// ModHooks.AfterTakeDamageHook += TakeDamageHook;
+			// ModHooks.OnReceiveDeathEventHook += EnemyDeathHook;
+			// On.HealthManager.TakeDamage += DealDamageHook;
+			// ModHooks.BeforePlayerDeadHook += PlayerDeathHook;
 		}
-
-		// public void UpdateLoop()
-		// {
-		// 	if (ws != null)
-		// 	{
-		// 		// server.UpdateLoop();
-		// 		byte[] message;
-		// 		if (!server.TryReceiveFrameBytes(out message)) return;
-		// 		// if (!server.InboundMessageQueue.TryDequeue(out message)) return;
-		// 		OnMessageRecieved((Networking.MessageType)Enum.ToObject(typeof(Networking.MessageType), message[0]), message[1]);
-		// 	}
-		// }
 
 		private void StepDoneHandler(Step<byte[]> step)
 		{
-			Send(step);
+			serverManager.SendMessage(step);
 		}
 
 		private void OnMessageRecieved(Networking.MessageType type, byte data)
@@ -154,7 +64,7 @@ namespace HallOfGodsAI.Envs
 			if (type == Networking.MessageType.Step)
 			{
 				ActionSpace action = (ActionSpace)data;
-				Step(action);
+				// Step(action);
 			}
 			else if (type == Networking.MessageType.Reset)
 			{
@@ -162,7 +72,7 @@ namespace HallOfGodsAI.Envs
 			}
 			else if (type == Networking.MessageType.Init)
 			{
-				Send(Networking.MessageType.Init, new byte[] { 0 });
+				// serverManager.SendMessage(Networking.MessageType.Init, new byte[] { 0 });
 			}
 			// Debug();
 		}
@@ -170,7 +80,6 @@ namespace HallOfGodsAI.Envs
 		public void UnloadManagers()
 		{
 			// serverManager.Unload();
-			ws.Close();
 			obsManager.Unload();
 		}
 
@@ -253,7 +162,7 @@ namespace HallOfGodsAI.Envs
 			}
 		}
 
-		public override void Reset(int seed = -1)
+		public void Reset(int seed = -1)
 		{
 			curDone = false;
 			curReward = 0;
@@ -262,21 +171,32 @@ namespace HallOfGodsAI.Envs
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnResetLoaded;
 		}
 
-		public override void Step(ActionSpace action)
-		{
-			curDone = false;
-			curReward = 0;
-			DoAction(action);
-			AdvanceSteps(15);
-		}
-
 		private void OnResetLoaded(Scene scene, LoadSceneMode mode)
 		{
 			obsManager.Load();
 			StartFreezeFrame();
 			AdvanceSteps(100, false);
+			var hitboxes = obsManager.GetHitboxes();
+			curObs = Utils.ObservationParser.RenderAllHitboxes(hitboxes);
 			UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnResetLoaded;
+			HallOfGodsAI.Instance.Log("Reset Done");
 			// ModHooks.DealDamageHook += DealDamageHook;
+			// InvokeResetDone(curObs.Flatten());
+		}
+
+		public void TestBlockingUpdate()
+		{
+			// if ()
+			Thread.Sleep(10000);
+		}
+
+		#region DEPRICATED
+		public void Step(ActionSpace action)
+		{
+			curDone = false;
+			curReward = 0;
+			DoAction(action);
+			AdvanceSteps(15);
 		}
 
 		private int TakeDamageHook(int hazardType, int damage)
@@ -291,28 +211,28 @@ namespace HallOfGodsAI.Envs
 			if (eventAlreadyReceived) return;
 			curReward += 100;
 			curDone = true;
-			InvokeStepDone(new Step<byte[]>()
-			{
-				observation = curObs.Flatten(),
-				done = curDone,
-				reward = curReward,
-				info = ""
-			});
+			// InvokeStepDone(new Step<byte[]>()
+			// {
+			// 	observation = curObs.Flatten(),
+			// 	done = curDone,
+			// 	reward = curReward,
+			// 	info = ""
+			// });
 		}
 
-		// private void PlayerDeathHook()
-		// {
-		// 	// if (eventAlreadyReceived) return;
-		// 	curReward -= 100;
-		// 	curDone = true;
-		// 	InvokeStepDone(new Step<byte[]>()
-		// 	{
-		// 		observation = curObs.Flatten(),
-		// 		done = curDone,
-		// 		reward = curReward,
-		// 		info = ""
-		// 	});
-		// }
+		private void PlayerDeathHook()
+		{
+			// if (eventAlreadyReceived) return;
+			curReward -= 100;
+			curDone = true;
+			// InvokeStepDone(new Step<byte[]>()
+			// {
+			// 	observation = curObs.Flatten(),
+			// 	done = curDone,
+			// 	reward = curReward,
+			// 	info = ""
+			// });
+		}
 
 		private void DealDamageHook(On.HealthManager.orig_TakeDamage orig, HealthManager self, HitInstance hitInstance)
 		{
@@ -347,32 +267,14 @@ namespace HallOfGodsAI.Envs
 
 		}
 
-		private void Send(Envs.Step<byte[]> step)
-		{
-			byte[] message = new byte[5 + step.observation.Length];
-			message[0] = Convert.ToByte(step.done);
-			Buffer.BlockCopy(BitConverter.GetBytes(step.reward), 0, message, 1, 4);
-			Buffer.BlockCopy(step.observation, 0, message, 5, step.observation.Length);
-			Send(Networking.MessageType.Step, message);
-			// _netMqPublisher.OutboundMessageQueue.Enquesue(step);
-		}
-
-		private void Send(Networking.MessageType type, byte[] bytes)
-		{
-			byte[] message = new byte[bytes.Length + 1];
-			message[0] = (byte)type;
-			Buffer.BlockCopy(bytes, 0, message, 1, bytes.Length);
-			ws.Send(message);
-		}
-
 		private IEnumerator Advance(int frames, bool invokeStep = true)
 		{
 			Time.timeScale = 10f;
-			// int j = 0;
+			int j = 0;
 			for (int i = 0; i < frames; i++)
 			{
 				yield return new WaitForFixedUpdate();
-				// HallOfGodsAI.Instance.Log("Advancing frame: " + ++j);
+				HallOfGodsAI.Instance.Log("Advancing frame: " + ++j);
 			}
 			Time.timeScale = 0;
 			var hitboxes = obsManager.GetHitboxes();
@@ -380,39 +282,33 @@ namespace HallOfGodsAI.Envs
 			inputDevice.ResetState();
 			if (invokeStep)
 			{
-				InvokeStepDone(new Step<byte[]>()
-				{
-					observation = curObs.Flatten(),
-					done = curDone,
-					reward = curReward,
-					info = ""
-				});
-			}
-			else
-			{
-				HallOfGodsAI.Instance.Log("Reset done");
-				InvokeResetDone(curObs.Flatten());
+				// InvokeStepDone(new Step<byte[]>()
+				// {
+				// 	observation = curObs.Flatten(),
+				// 	done = curDone,
+				// 	reward = curReward,
+				// 	info = ""
+				// });
 			}
 		}
 		#endregion
-
-		public override void Close()
+		#endregion
+		public void Dispose()
 		{
-			ModHooks.AfterTakeDamageHook -= TakeDamageHook;
-			ModHooks.OnReceiveDeathEventHook -= EnemyDeathHook;
-			On.HealthManager.TakeDamage -= DealDamageHook;
+			// ModHooks.AfterTakeDamageHook -= TakeDamageHook;
+			// ModHooks.OnReceiveDeathEventHook -= EnemyDeathHook;
+			// On.HealthManager.TakeDamage -= DealDamageHook;
 			// serverManager.OnMessageRecieved -= OnMessageRecieved;
-			OnResetDone -= ResetDoneHandler;
-			OnStepDone -= StepDoneHandler;
+			// OnResetDone -= ResetDoneHandler;
+			// // OnStepDone -= StepDoneHandler;
+			// ModHooks.HeroUpdateHook -= serverManager.UpdateLoop;
 			UnloadManagers();
 		}
 
-		public void Debug()
+		public void Debug() 
 		{
 			// Debug.Log("Debug");
-			// HallOfGodsAI.Instance.Log("State: " + state);
-			// HallOfGodsAI.Instance.Log("InboundMessageQueue.Count: " + InboundMessageQueue.Count);
-			// HallOfGodsAI.Instance.Log("OutboundMessageQueue.Count: " + OutboundMessageQueue.Count);
+			serverManager.Debug();
 		}
 
 	}

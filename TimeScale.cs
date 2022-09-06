@@ -87,6 +87,8 @@ namespace HallOfGodsAI.Utils
 	public struct TimeScaleManager
 	{
 		public static bool TimeScaleActive = false;
-		public static float CurrentTimeScale = 1f;
+		public static float CurrentTimeScale = 10f;
+
+        public static float DefaultTimeScale = 1f;
 	}
 }

@@ -41,6 +41,7 @@ namespace HallOfGodsAI.Networking
 					{
 						byte[] message;
 						if (!OutboundMessageQueue.TryDequeue(out message)) continue;
+						HallOfGodsAI.Instance.Log($"Sending message: {(MessageType)message[0]}");
 						server.SendFrame(message);
 						state = NetworkingState.REQ;
 					}
