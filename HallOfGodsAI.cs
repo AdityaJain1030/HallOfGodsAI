@@ -12,7 +12,7 @@ namespace HallOfGodsAI
     internal class HallOfGodsAI : Mod
     {
         internal static HallOfGodsAI Instance { get; private set; }
-        internal Envs.HornetEnv _env = Envs.HornetEnv.Instance();
+        internal Envs.NewHornetEnv _env = Envs.NewHornetEnv.Instance();
 
         public HallOfGodsAI() : base("HallOfGodsAI") { }
 
@@ -28,6 +28,7 @@ namespace HallOfGodsAI
             Instance = this;
 
             Log("Initialized");
+            // ilRecordKillForJournal = new ILHook(origRecordKillForJournal, ilRecordKillForJournalHook);
 
             _env.OnStepDone += (step) =>
             {
@@ -37,11 +38,17 @@ namespace HallOfGodsAI
             ModHooks.HeroUpdateHook += () => {
                 if (Input.GetKeyDown(KeyCode.F2))
                 {
+                    var statues = UObject.FindObjectsOfType<BossStatue>();
+                    foreach (var statue in statues)
+                    {
+                        Log(statue.gameObject.name);
+                    }
+                    // BossStatueCompletionStates.;
                     // _env.StartFreezeFrame();
                 }
                 if (Input.GetKeyDown(KeyCode.F3))
                 {
-                    // _env.EndFreezeFrame();
+                    _env.EndFreezeFrame();
                 }
                 if (Input.GetKeyDown(KeyCode.F4))
                 {
@@ -49,17 +56,11 @@ namespace HallOfGodsAI
                 }
                 if (Input.GetKeyDown(KeyCode.F1))
                 {
-                    // _env.UnloadManagers();
+                    _env.Close();
                 }
                 if (Input.GetKeyDown(KeyCode.F5))
                 {
                     _env.Reset();
-                }
-                if (Input.GetKeyDown(KeyCode.F6))
-                {
-                    _env.Debug();
-                    // ModHooks.HeroUpdateHook -= _env.TestBlockingUpdate;
-                    // ModHooks.HeroUpdateHook += _env.TestBlockingUpdate;
                 }
             };
             // SceneManager.
