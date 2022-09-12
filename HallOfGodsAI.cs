@@ -32,7 +32,7 @@ namespace HallOfGodsAI
 
             _env.OnStepDone += (step) =>
             {
-                Log("Steppped");
+                // Log("Steppped");
             };
             
             ModHooks.HeroUpdateHook += () => {
@@ -48,7 +48,7 @@ namespace HallOfGodsAI
                 }
                 if (Input.GetKeyDown(KeyCode.F3))
                 {
-                    _env.EndFreezeFrame();
+                    // _env.EndFreezeFrame();
                 }
                 if (Input.GetKeyDown(KeyCode.F4))
                 {
@@ -61,6 +61,10 @@ namespace HallOfGodsAI
                 if (Input.GetKeyDown(KeyCode.F5))
                 {
                     _env.Reset();
+                }
+                if (Input.GetKeyDown(KeyCode.F6))
+                {
+                    _env.Step(Envs.ActionSpace.MoveLeft);
                 }
             };
             // SceneManager.

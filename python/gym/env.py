@@ -1,4 +1,5 @@
 from argparse import Action
+from concurrent.futures import thread
 from enum import Enum
 from re import T
 import gym
@@ -44,15 +45,16 @@ class HallOfGodsEnv(gym.Env):
 		self.observation_shape = (212, 120, 1)
 		self.observation_space = Box(low=0, high=255, shape=self.observation_shape, dtype=np.uint8)
 
-		self.loop.run_until_complete(self.socket.send(bytearray((0, 0))))
-		if (self.loop.run_until_complete(self.socket.recv()) == bytearray((0, 0))):
-			print("Connected to Hollow Knight")
+		# self.loop.run_until_complete(self.socket.send(bytearray((0, 0))))
+		# if (self.loop.run_until_complete(self.socket.recv()) == bytearray((0, 0))):
+		# 	print("Connected to Hollow Knight")
 	
 	def step(self, action):
 		print("attempting step")
 		assert action >= 0 and action < 14, "Invalid action"
 		self.loop.run_until_complete(self.socket.send(bytearray((1, action))))
 		bytes = self.loop.run_until_complete(self.socket.recv())
+		time.sleep(0.1)
 		# RETRIES = 3
 		# while RETRIES > 0:
 		# 	try:
@@ -84,10 +86,11 @@ class HallOfGodsEnv(gym.Env):
 		# return 
 	
 	def reset(self):
-		print("Attempting Reset")
-		self.loop.run_until_complete(self.socket.send(bytearray((2, 0))))
 		bytes = self.loop.run_until_complete(self.socket.recv())
-		RETRIES = 3
+		# print("Attempting Reset")
+		# self.loop.run_until_complete(self.socket.send(bytearray((2, 0))))
+		# bytes = self.loop.run_until_complete(self.socket.recv())
+		# RETRIES = 3
 		# while RETRIES > 0:
 		# 	try:
 		# 		print("test ran")
@@ -113,6 +116,8 @@ class HallOfGodsEnv(gym.Env):
 		# 	bytes = bytes[5:]
 		obs = np.frombuffer(bytes[1:], dtype=np.uint8).reshape(self.observation_shape)
 		return obs
+	def seed(seed):
+		return
 	
 	def close(self):
 		self.socket.close()
@@ -120,13 +125,14 @@ class HallOfGodsEnv(gym.Env):
 
 
 	# def reset(self):
-# env = make_vec_env(HallOfGodsEnv, n_envs=1)
-env = HallOfGodsEnv()
-# model = PPO("CnnPolicy", env, verbose=1)
-# model.learn(total_timesteps=1000)
-# model.save("PPO_Hornet_1")
-# def tryReceieve(socket, ctx, timeout = 3000, RETRIES = 3):
-	# RETRIES = 5
+env = make_vec_env(HallOfGodsEnv, n_envs=1)
+# env = HallOfGodsEnv()
+model = PPO("CnnPolicy", env, verbose=1)
+model.learn(total_timesteps=5000000)
+print('done')
+model.save("PPO_Hornet_1")
+# # def tryReceieve(socket, ctx, timeout = 3000, RETRIES = 3):
+# 	# RETRIES = 5
 	
 
 
@@ -137,11 +143,11 @@ obs = env.reset()
 
 dead = False
 while not dead:
-	# action, _states = model.predict(obs)
-	obs, rewards, dones, info = env.step(env.action_space.sample())
-	dead = dones
-	# if dones == True:
-		# env.reset()
+	action, _states = model.predict(obs)
+	obs, rewards, dones, info = env.step(action)
+	dead = dones[0]
+	# if dones[0] == True:
+	# 	env.reset()
 		# break
 
 # print(obs)

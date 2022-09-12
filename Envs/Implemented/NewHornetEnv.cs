@@ -5,6 +5,7 @@ using System.Collections;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using USceneManager = UnityEngine.SceneManagement.SceneManager;
 using Modding;
 using GlobalEnums;
 using InControl;
@@ -21,12 +22,16 @@ namespace HallOfGodsAI.Envs
 		//game
 		internal string scene_name = "GG_Hornet_1";
 		internal string gate_name = "door_dreamEnter";
+		private string PreviousScene;
+		private Vector3 StatuePos;
+		private BossStatue statue;
 
 		//obs
 		internal Utils.GameObservation curObs;
 		internal bool curDone = false;
 		internal float curReward = 0f;
 		internal Utils.HitboxReaderManager obsManager = new();
+		internal Utils.BossFightManager bossFightManager = new();
 
 		//input
 		internal Utils.InputDeviceShim inputDevice = new();
@@ -55,12 +60,67 @@ namespace HallOfGodsAI.Envs
 		{
 			InputManager.AttachDevice(inputDevice);
 		}
+		public void AdvanceSteps(int frames)
+		{
+			GameManager.instance.StartCoroutine(Advance(frames));
+		}
+		private IEnumerator Advance(int frames)
+		{
+			if (TimeScaleDuringFrameAdvance == 0) yield break;
 
+			Time.timeScale = TimeScaleDuringFrameAdvance;
+			// int j = 0;
+			for (int i = 0; i < frames; i++)
+			{
+				yield return new WaitForFixedUpdate();
+				// HallOfGodsAI.Instance.Log("Advancing frame: " + ++j);
+			}
+			Time.timeScale = 0;
+
+			OnStep();
+		}
 		public void Setup()
 		{
 			StartWebSocketServer();
 			AddRewardHooks();
 			InitWebSocketCallbacks();
+			bossFightManager.Load();
+			obsManager.Load();
+			bossFightManager.OnSetupEvent += OnSetup;
+			// bossFightManager.StepDoneEvent += OnStep;
+			bossFightManager.FightEndedEvent += FightEnded;
+		}
+
+		private void OnStep()
+		{
+			var hitboxes = obsManager.GetHitboxes();
+			curObs = Utils.ObservationParser.RenderAllHitboxes(hitboxes);
+			inputDevice.ResetState();
+			InvokeStepDone(new Step<byte[]>()
+			{
+				observation = curObs.Flatten(),
+				done = curDone,
+				reward = curReward,
+				info = ""
+			});
+			if (curDone) bossFightManager.EndFreezeFrame();
+		}
+
+		private void FightEnded(bool won)
+		{
+			HallOfGodsAI.Instance.Log("FightEnded: " + won);
+			curDone = true;
+			if (won) curReward += 100;
+			else curReward -= 100;
+		}
+
+		private void OnSetup()
+		{
+			HallOfGodsAI.Instance.Log("EnvStarted");
+			var hitboxes = obsManager.GetHitboxes();
+			curObs = Utils.ObservationParser.RenderAllHitboxes(hitboxes);
+			InvokeResetDone(curObs.Flatten());
+			bossFightManager.StartFreezeFrame(5);
 		}
 
 		private void StartWebSocketServer()
@@ -76,16 +136,17 @@ namespace HallOfGodsAI.Envs
 		{
 			ModHooks.AfterTakeDamageHook += TakeDamageHook;
 			On.HealthManager.TakeDamage += DealDamageHook;
-			On.BossSceneController.DoDreamReturn += PlayerDeadHook;
-			On.BossSceneController.CheckBossesDead += BossDeadHook;
+			// USceneManager.sceneLoaded += SceneLoaded;
+			// On.BossSceneController.DoDreamReturn += (orig, self) => {
+			// 	orig(self);
+			// 	HallOfGodsAI.Instance.Log("Player dead");
+			// };
 		}
 
 		private void RemoveRewardHooks()
 		{
 			ModHooks.AfterTakeDamageHook -= TakeDamageHook;
 			On.HealthManager.TakeDamage -= DealDamageHook;
-			On.BossSceneController.DoDreamReturn -= PlayerDeadHook;
-			On.BossSceneController.CheckBossesDead -= BossDeadHook;
 		}
 
 		#region Reward Hooks
@@ -100,92 +161,6 @@ namespace HallOfGodsAI.Envs
 		{
 			orig(self, hitInstance);
 			curReward += hitInstance.DamageDealt * 100 / (self.hp == 0 ? 1 : self.hp);
-		}
-
-		private void PlayerDeadHook(On.BossSceneController.orig_DoDreamReturn orig, BossSceneController self)
-		{
-			orig(self);
-			HallOfGodsAI.Instance.Log("Player dead");
-			curDone = true;
-			curReward -= 100;
-			EndFreezeFrame();
-			InvokeStepDone(new Step<byte[]>()
-			{
-				observation = curObs.Flatten(),
-				done = curDone,
-				reward = curReward,
-				info = ""
-			});
-		}
-
-		private void BossDeadHook(On.BossSceneController.orig_CheckBossesDead orig, BossSceneController self)
-		{
-			orig(self);
-			HallOfGodsAI.Instance.Log("Bosses dead");
-			curDone = true;
-			curReward += 100;
-			EndFreezeFrame();
-			InvokeStepDone(new Step<byte[]>()
-			{
-				observation = curObs.Flatten(),
-				done = curDone,
-				reward = curReward,
-				info = ""
-			});
-		}
-		#endregion
-
-		#region Frame Advance Utils
-		public void StartFreezeFrame(int speed)
-		{
-			if (Time.timeScale != 0)
-			{
-				Time.timeScale = 0f;
-				TimeScaleDuringFrameAdvance = speed;
-			}
-		}
-
-		public void EndFreezeFrame()
-		{
-			GameManager._instance.StopCoroutine("Advance");
-			if (Time.timeScale == 0)
-			{
-				Time.timeScale = 1;
-			}
-		}
-
-		private void AdvanceSteps(int frames, bool invokeStep = true)
-		{
-			GameManager.instance.StartCoroutine(Advance(frames, invokeStep));
-		}
-
-		private IEnumerator Advance(int frames, bool invokeStep = true)
-		{
-			Time.timeScale = TimeScaleDuringFrameAdvance;
-			// int j = 0;
-			for (int i = 0; i < frames; i++)
-			{
-				yield return new WaitForFixedUpdate();
-				// HallOfGodsAI.Instance.Log("Advancing frame: " + ++j);
-			}
-			Time.timeScale = 0;
-			var hitboxes = obsManager.GetHitboxes();
-			curObs = Utils.ObservationParser.RenderAllHitboxes(hitboxes);
-			inputDevice.ResetState();
-			if (invokeStep)
-			{
-				InvokeStepDone(new Step<byte[]>()
-				{
-					observation = curObs.Flatten(),
-					done = curDone,
-					reward = curReward,
-					info = ""
-				});
-			}
-			else
-			{
-				InvokeResetDone(curObs.Flatten());
-			}
 		}
 		#endregion
 
@@ -213,10 +188,10 @@ namespace HallOfGodsAI.Envs
 			{
 				Reset();
 			}
-			else if (type == Networking.MessageType.Init)
-			{
-				wsManager.SendMessage(Networking.MessageType.Init, new byte[] { 0 });
-			}
+			// else if (type == Networking.MessageType.Init)
+			// {
+			// 	wsManager.SendMessage(Networking.MessageType.Init, new byte[] { 0 });
+			// }
 		}
 
 		private void SendReset(byte[] obs)
@@ -230,44 +205,6 @@ namespace HallOfGodsAI.Envs
 			wsManager.SendMessage(step);
 		}
 		#endregion
-		private void LoadBossScene()
-		{
-			var HC = HeroController.instance;
-			var GM = GameManager.instance;
-
-			//Copy paste of the FSM that loads a boss from HoG
-			PlayerData.instance.dreamReturnScene = "GG_Workshop";
-			PlayMakerFSM.BroadcastEvent("BOX DOWN DREAM");
-			PlayMakerFSM.BroadcastEvent("CONVO CANCEL");
-
-			HC.ClearMPSendEvents();
-			GM.TimePasses();
-			GM.ResetSemiPersistentItems();
-			HC.enterWithoutInput = true;
-			HC.AcceptInput();
-
-			GM.BeginSceneTransition(new GameManager.SceneLoadInfo
-			{
-				SceneName = scene_name,
-				EntryGateName = gate_name,
-				EntryDelay = 0,
-				Visualization = GameManager.SceneLoadVisualizations.GodsAndGlory,
-				PreventCameraFadeOut = true
-			});
-			GameManager.instance.StartCoroutine(ResetDoneWorker());
-		}
-
-		private IEnumerator ResetDoneWorker()
-		{
-			yield return new WaitForFinishedEnteringScene();
-			yield return null;
-			yield return new WaitForSeconds(1f); //this line differenciates this function from ApplySettings
-			HeroController.instance.AddMPCharge(1);
-			HeroController.instance.AddMPCharge(-1);
-			obsManager.Load();
-			StartFreezeFrame(5);
-			yield return Advance(20, false);
-		}
 
 		private void DoAction(ActionSpace action)
 		{
@@ -322,7 +259,7 @@ namespace HallOfGodsAI.Envs
 		{
 			curDone = false;
 			curReward = 0f;
-			LoadBossScene();
+			// LoadBossScene();
 		}
 
 		public override void Step(ActionSpace action)
@@ -330,17 +267,23 @@ namespace HallOfGodsAI.Envs
 			curDone = false;
 			curReward = 0;
 			DoAction(action);
-			AdvanceSteps(15);
+			AdvanceSteps(20);
 		}
 
 		public override void Close()
 		{
-			EndFreezeFrame();
+			bossFightManager.EndFreezeFrame();
 			obsManager.Unload();
 			RemoveRewardHooks();
 			CloseWebSocketCallbacks();
 			wssr.Stop();
+			bossFightManager.Unload();
 		}
 		#endregion
+
+		// private void Cleanup(Scene prev, Scene next) {
+		// if (next.name == "GG_Workshop" || BossSequenceController.IsInSequence) {
+		// 	setupEvent = null;
+		// }
 	}
 }
